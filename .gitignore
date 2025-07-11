@@ -1,0 +1,20 @@
+# These are the configuration files for the node rpc proxy configuration
+config/xusd-node-rpc-proxy/*
+!config/xusd-node-rpc-proxy/settings.json
+!config/xusd-node-rpc-proxy/pow_creds.json
+
+# These are for the redis and mongodb, cached...
+data/xusd-explorer-mongodb
+data/xusd-explorer-redis
+
+# This is the pippin data, it shouldn't be tracked by git, it will contain sensitive data
+data/xusd-pippin-data
+
+# This is the xusd-node-data, it also can contain sensitive data, such as wallets and private keys
+# It also will contain the entire ledger
+# But you may want to track your node config
+data/xusd-node-data
+!data/xusd-node-data/config-node.toml
+!data/xusd-node-data/config-rpc.toml
+
+.DS_Store

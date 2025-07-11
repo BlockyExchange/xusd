@@ -1,0 +1,6 @@
+{
+    "work_server": {
+      "url": "http://xusd-work-server",
+      "port": "7023"
+    }
+  }

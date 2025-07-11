@@ -1,0 +1,291 @@
+version: '3.8'
+
+services:
+
+  xusd-node:
+    image: registry.blocky.com.br/xusd-node:latest
+    build:
+      context: ./modules/xusd-node
+      dockerfile: ./docker/node/Dockerfile
+
+    container_name: xusd_node
+    restart: unless-stopped
+    ports:
+      - "[::1]:7025:7025" # peering.xusd.blocky.com.br
+    #  - "127.0.0.1:7011:7016" # This should be disabled in production
+    volumes:
+      - ./data/xusd-node-data:/root/Nano
+    environment:
+      - NANO_DEFAULT_PEER=peering.xusd.blocky.com.br
+      - PRECONFIGURED_PEERS=A41554BDD232695188F8DABF364A88C1ADB8DB63840050BE41D5FB31489F5A82,A41554BDDEDE9DBF00073CE9D8DC4D866054241BB5C614687B7C5501FA714E25
+      - NODE_PORT=7025
+      - RPC_PORT=7026
+      - WEBSOCKET_PORT=7028
+      - NANO_WORKING_APP_PATH=Nano
+    networks:
+      - xusd-proxy-node-net
+      - xusd-pippin-node-net
+      - xusd-node-rpc-proxy-node-net
+    healthcheck: 
+      test: ["CMD", "perl", "-MIO::Socket::INET", "-e", "$s=IO::Socket::INET->new('127.0.0.1:7026') or exit 1; print $s \"POST / HTTP/1.1\\r\\nHost: 127.0.0.1:7026\\r\\nContent-Type: application/json\\r\\nContent-Length: 24\\r\\nConnection: close\\r\\n\\r\\n{\\\"action\\\":\\\"block_count\\\"}\"; $s->shutdown(1); @res=<$s>; exit($res[0] =~ /^HTTP\\/1\\.1 200 OK/ ? 0 : 1);"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+    #entrypoint: ["sleep", "infinity"]
+  xusd-explorer:
+    image: registry.blocky.com.br/xusd-explorer:latest
+    build: ./modules/xusd-explorer
+    container_name: xusd_explorer
+    environment:
+      - SERVER_PORT=80
+      - RPC_DOMAIN=https://rpc.xusd.blocky.com.br
+      - NODE_FOLDER=
+      - MONGO_USER=root
+      - MONGO_PASSWORD=example
+      - SENTRY_DNS=
+      - IPAPI_KEY=
+      - YOUTUBE_CREDENTIAL=
+      - GOOGLE_APPLICATION_CREDENTIALS=
+      - REDIS_PORT=6379
+      - REDIS_HOST=xusd-explorer-redis
+      - REDIS_PASSWORD=
+      - MONGO_HOSTNAME=xusd-explorer-mongodb
+      - MONGO_PORT=27017
+      - MONGO_DATABASE_NAME=xusddatabase
+      - NODE_ENV=production
+      - NODE_HOSTNAME=nano-node-xusd
+    networks:
+      - xusd-proxy-explorer-net
+      - xusd-explorer-redis-net
+      - xusd-explorer-mongodb-net
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+    depends_on:
+      xusd-explorer-redis:
+        condition: service_healthy
+        restart: true
+      xusd-explorer-mongodb:
+        condition: service_healthy
+        restart: true
+        
+  xusd-wallet:
+    image: registry.blocky.com.br/xusd-wallet:latest
+    build:
+      context: ./modules/xusd-wallet
+      dockerfile: ./Dockerfile
+    container_name: xusd_wallet
+    environment:
+      - SERVER_PORT=80
+    networks:
+      - xusd-proxy-wallet-net
+    healthcheck:
+      test: curl --fail http://127.0.0.1:80 || exit 1
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+  
+  xusd-work-server:
+    image: registry.blocky.com.br/xusd-work-server:latest # Our image uses ROCm as a base image, for AMD specifically
+    build: ./modules/xusd-work-server
+    container_name: xusd_work_server
+    environment:
+      - CPU_THREADS=0 # If using GPU, set this to 0, and mount your gpu in devices, as well as OpenCL folders etc
+      - GPU=0:0:67108864
+      - LISTEN_HOST=0.0.0.0
+      - LISTEN_PORT=7023
+      - GPU_LOCAL_WORK_SIZE=256 # Optional: set this to your desired value
+      - SHUFFLE=true # Optional: set to "true" or "1" to enable shuffling
+    # That's for GPU pass (Specifically the AMD Radeon 5500 XT)
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    volumes:
+      - "/etc/OpenCL/vendors:/etc/OpenCL/vendors:ro"
+    ports:
+      - "127.0.0.1:7023:7023"
+    security_opt:
+      - seccomp:unconfined
+    networks:
+      - xusd-pippin-work-net
+      - xusd-node-rpc-proxy-nano-work-server-net
+    healthcheck:
+      test: curl http://127.0.0.1:7023 || exit 1
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+
+  xusd-pippin:
+    image: registry.blocky.com.br/xusd-pippin:latest
+    build:
+        context: ./modules/xusd-pippin
+        dockerfile: ./Dockerfile
+    container_name: xusd_pippin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7029:11338"
+    volumes:
+      - "./data/xusd-pippin-data:/root/PippinData"
+    environment:
+      - REDIS_HOST=xusd-pippin-redis
+    networks:
+      - xusd-pippin-redis-net
+      - xusd-pippin-node-net
+      - xusd-pippin-work-net
+    healthcheck:
+      test: ["CMD", "perl", "-MIO::Socket::INET", "-e", "$s=IO::Socket::INET->new('127.0.0.1:7029') or exit 1; print $s \"POST / HTTP/1.1\\r\\nHost: 127.0.0.1:7029\\r\\nContent-Type: application/json\\r\\nContent-Length: 24\\r\\nConnection: close\\r\\n\\r\\n{\\\"action\\\":\\\"block_count\\\"}\"; $s->shutdown(1); @res=<$s>; exit($res[0] =~ /^HTTP\\/1\\.1 200 OK/ ? 0 : 1);"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+    depends_on:
+      xusd-node:
+        condition: service_healthy
+        restart: true
+      xusd-pippin-redis:
+        condition: service_healthy
+        restart: true
+      xusd-work-server:
+        condition: service_healthy
+        restart: true
+
+
+  xusd-blockycon:
+    image: registry.blocky.com.br/xusd-blockycon:latest
+    build:
+      context: ./modules/xusd-blockycon
+      dockerfile: ./Dockerfile
+    ports:
+      - "127.0.0.1:7010:5000" # blockycon.blocky.com.br
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5000
+    volumes:
+      - "./data/xusd-blockycon:/app/images"
+    networks:
+      - xusd-proxy-blockycon-net
+
+  xusd-pippin-redis:
+    image: docker.io/redis:7-alpine
+    container_name: xusd_pippin_redis
+    restart: unless-stopped
+    networks:
+      - xusd-pippin-redis-net
+    healthcheck:
+      test: ["CMD", "redis-cli","ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+  xusd-explorer-redis:
+    image: docker.io/redis:7-alpine
+    container_name: xusd_explorer_redis
+    restart: unless-stopped
+    volumes:
+      - ./data/xusd-explorer-redis:/data
+    networks:
+      - xusd-explorer-redis-net
+    healthcheck:
+      test: ["CMD", "redis-cli","ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+  xusd-explorer-mongodb:
+    image: docker.io/mongo:latest
+    container_name: xusd_explorer_mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    volumes:
+      - ./data/xusd-explorer-mongodb:/data/db
+    networks:
+      - xusd-explorer-mongodb-net
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+
+  xusd-proxy:
+    image: docker.io/caddy:2.9-alpine
+    container_name: xusd_proxy
+    ports:
+      - "7024:80" # blockycon.blocky.com.br # Public
+    volumes:
+      - ./config/xusd-proxy/Caddyfile:/etc/caddy/Caddyfile
+    networks:
+      - xusd-proxy-wallet-net
+      - xusd-proxy-explorer-net
+      - xusd-proxy-node-net
+      - xusd-node-rpc-proxy-net
+      - xusd-proxy-blockycon-net
+    healthcheck:
+      test: wget --spider -q --header="Host:wallet.xusd.blocky.com.br" http://127.0.0.1:80/
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+    depends_on:
+      xusd-explorer:
+        condition: service_healthy
+        restart: true
+      xusd-wallet:
+        condition: service_healthy
+        restart: true
+  xusd-node-rpc-proxy:
+    image: docker.io/nanojson/nanorpcproxy:v1.4.5
+    container_name: xusd_node_rpc_proxy
+    ports:
+      - "7026:9950" # rpc.xusd.blocky.com.br # Public
+      - "7028:9952" # ws.xusd.blocky.com.br # Public
+    volumes:
+      - "./config/xusd-node-rpc-proxy:/root"
+    networks:
+      - xusd-node-rpc-proxy-net
+      - xusd-node-rpc-proxy-node-net
+      - xusd-node-rpc-proxy-nano-work-server-net
+    healthcheck:
+      test: curl --fail http://127.0.0.1:9950 || exit 1
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+    depends_on:
+      xusd-node:
+        condition: service_healthy
+        restart: true
+
+networks:
+  xusd-proxy-wallet-net:
+    driver: bridge
+  xusd-proxy-explorer-net:
+    driver: bridge
+  xusd-proxy-node-net:
+    driver: bridge
+  xusd-proxy-blockycon-net:
+    driver: bridge
+  xusd-pippin-work-net:
+    driver: bridge
+  xusd-pippin-node-net:
+    driver: bridge
+  xusd-pippin-redis-net:
+    driver: bridge
+  xusd-explorer-redis-net:
+    driver: bridge
+  xusd-explorer-mongodb-net:
+    driver: bridge
+  xusd-node-rpc-proxy-net:
+    driver: bridge
+  xusd-node-rpc-proxy-node-net:
+    driver: bridge
+  xusd-node-rpc-proxy-nano-work-server-net:
+    driver: bridge

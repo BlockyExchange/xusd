@@ -1,0 +1,3 @@
+[submodule "modules/xusd-pippin"]
+	path = modules/xusd-pippin
+	url = git@github.com:BlockyExchange/xusd-pippin.git

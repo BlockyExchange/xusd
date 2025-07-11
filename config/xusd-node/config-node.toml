@@ -1,0 +1,20 @@
+
+[node.websocket]
+
+# WebSocket server bind address.
+# type:string,ip
+address = "::ffff:0.0.0.0"
+# Enable or disable WebSocket server.
+# type:bool
+enable = true
+
+[rpc]
+
+# Enable or disable RPC.
+# type:bool
+enable = true
+
+[node]
+# should be enabled if you are a Principal Representative
+# A partner of blocky, get in touch so we can delegate to you
+enable_voting = true

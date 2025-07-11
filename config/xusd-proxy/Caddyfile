@@ -1,0 +1,14 @@
+http://wallet.xusd.blocky.com.br {
+    encode gzip zstd
+    reverse_proxy http://xusd-wallet:80
+}
+
+http://explorer.xusd.blocky.com.br {
+    encode gzip zstd
+    reverse_proxy http://xusd-explorer:80
+}
+
+http://blockycon.blocky.com.br {
+    encode gzip zstd
+    reverse_proxy http://xusd-blockycon:5000
+}
